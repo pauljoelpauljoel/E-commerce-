@@ -1,3 +1,5 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -2834,6 +2836,7 @@ Your goals:
 4. Maintain a smart e-commerce assistant persona. 
 5. Keep answers concise, modern, and friendly.
 6. CRITICAL: ONLY suggest products that are explicitly provided in the live data context below. NEVER make up products, and NEVER suggest products from outside this website. If a requested product is not in the context, politely state it is unavailable in our store.
+7. CRITICAL: If the user asks a general question (like payment methods or shipping), answer directly using Store Info. Do NOT invent or suggest products unless explicitly requested.
 
 Here is the current live data context for the user. Use this to provide personalized answers:
 `;
@@ -3012,7 +3015,8 @@ app.post('/api/ai/chat', async (req, res) => {
       ).join('\n\n') + `\n\nCRITICAL INSTRUCTION: When showing these products to the user, ALWAYS use markdown to display the image (e.g. ![${matchedProducts[0].name}](${matchedProducts[0].images?.[0]})) and provide a clickable link to view the product (e.g. [View ${matchedProducts[0].name}](/product/${matchedProducts[0].id})). You MUST list ALL provided search results.`;
     }
 
-    const fullContext = `\n--- LIVE DATA CONTEXT ---\n${userContext}\n${couponContext}\n${searchContext}\n-----------------------\n`;
+    const storeContext = `Store Info: We accept Cash on Delivery (COD), UPI (Google Pay, PhonePe, Paytm, etc.), Credit/Debit Cards, and Net Banking. We ship nationwide across India.`;
+    const fullContext = `\n--- LIVE DATA CONTEXT ---\n${userContext}\n${couponContext}\n${storeContext}\n${searchContext}\n-----------------------\n`;
 
     const aiResponse = await generateChatResponse(messages, fullContext);
     
