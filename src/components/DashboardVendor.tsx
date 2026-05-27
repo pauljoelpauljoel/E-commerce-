@@ -1525,7 +1525,10 @@ export default function DashboardVendor({ onNavigateTo }: DashboardVendorProps) 
                             </div>
                             <div className="space-y-0.5">
                               <p className="text-[10px] font-bold text-gray-400 font-sans uppercase tracking-wider">VENDOR EARNINGS</p>
-                              <p className="text-base font-black text-gray-800">₹{o.totalAmount.toLocaleString('en-IN')}</p>
+                              <p className="text-base font-black text-gray-800">₹{(o.totalAmount - (o.shippingFee || 0)).toLocaleString('en-IN')}</p>
+                              {(o.shippingFee || 0) > 0 && (
+                                <p className="text-[10px] text-violet-600 font-bold">+ ₹{o.shippingFee} Shipping Charge</p>
+                              )}
                             </div>
                           </div>
                           

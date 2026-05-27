@@ -36,7 +36,8 @@ import {
   Ticket,
   Headset,
   MessageCircle,
-  Phone
+  Phone,
+  ShoppingBag
 } from 'lucide-react';
 
 interface DashboardAdminProps {
@@ -1238,6 +1239,55 @@ export default function DashboardAdmin({ onNavigateTo }: DashboardAdminProps) {
                 </div>
 
               </div>
+
+              {/* Global Revenue Breakdown */}
+              {analytics && analytics.overview && (
+                <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-xs mb-6">
+                  <div className="flex justify-between items-center mb-6">
+                    <div>
+                      <h4 className="text-sm font-bold font-display text-gray-800 uppercase tracking-wider">
+                        Platform Revenue Breakdown
+                      </h4>
+                      <p className="text-xs text-gray-500 mt-1">Aggregate gross sales separated by product and shipping.</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="p-5 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-mono font-bold text-emerald-600 uppercase tracking-widest">Total Gross</span>
+                        <h4 className="text-2xl font-extrabold font-display text-emerald-800 mt-1">
+                          ₹{analytics.overview.totalRevenue?.toLocaleString('en-IN') || 0}
+                        </h4>
+                      </div>
+                      <div className="h-10 w-10 bg-emerald-200/50 rounded-lg flex items-center justify-center text-emerald-700">
+                        <Award className="h-5 w-5" />
+                      </div>
+                    </div>
+                    <div className="p-5 bg-indigo-50 rounded-xl border border-indigo-100 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-mono font-bold text-indigo-600 uppercase tracking-widest">Product Sales</span>
+                        <h4 className="text-2xl font-extrabold font-display text-indigo-800 mt-1">
+                          ₹{analytics.overview.totalProductRevenue?.toLocaleString('en-IN') || 0}
+                        </h4>
+                      </div>
+                      <div className="h-10 w-10 bg-indigo-200/50 rounded-lg flex items-center justify-center text-indigo-700">
+                        <ShoppingBag className="h-5 w-5" />
+                      </div>
+                    </div>
+                    <div className="p-5 bg-orange-50 rounded-xl border border-orange-100 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-mono font-bold text-orange-600 uppercase tracking-widest">Shipping Fees</span>
+                        <h4 className="text-2xl font-extrabold font-display text-orange-800 mt-1">
+                          ₹{analytics.overview.totalShippingRevenue?.toLocaleString('en-IN') || 0}
+                        </h4>
+                      </div>
+                      <div className="h-10 w-10 bg-orange-200/50 rounded-lg flex items-center justify-center text-orange-700">
+                        <Truck className="h-5 w-5" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Analytics Chart Block */}
               {analytics && analytics.salesByDay && (
@@ -2482,15 +2532,27 @@ export default function DashboardAdmin({ onNavigateTo }: DashboardAdminProps) {
                         {vendorStats ? (
                           <div className="space-y-4">
                             {/* Revenue Card */}
-                            <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 flex items-center justify-between">
-                              <div>
-                                <span className="text-[9px] font-mono text-emerald-600 font-bold uppercase tracking-wider">Gross Sales</span>
-                                <h4 className="text-2xl font-extrabold text-emerald-800 font-mono mt-0.5">
-                                  ₹{vendorStats.revenue?.toLocaleString('en-IN') || 0}
-                                </h4>
+                            <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-100 flex flex-col gap-3">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <span className="text-[9px] font-mono text-emerald-600 font-bold uppercase tracking-wider">Gross Sales</span>
+                                  <h4 className="text-2xl font-extrabold text-emerald-800 font-mono mt-0.5">
+                                    ₹{vendorStats.revenue?.toLocaleString('en-IN') || 0}
+                                  </h4>
+                                </div>
+                                <div className="h-10 w-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">
+                                  <Award className="h-5 w-5" />
+                                </div>
                               </div>
-                              <div className="h-10 w-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">
-                                <Award className="h-5 w-5" />
+                              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-emerald-100/50">
+                                <div>
+                                  <span className="text-[8px] font-mono text-emerald-600 font-bold uppercase tracking-wider">Product</span>
+                                  <p className="text-sm font-extrabold text-emerald-700 font-mono">₹{vendorStats.productRevenue?.toLocaleString('en-IN') || 0}</p>
+                                </div>
+                                <div>
+                                  <span className="text-[8px] font-mono text-emerald-600 font-bold uppercase tracking-wider">Shipping</span>
+                                  <p className="text-sm font-extrabold text-emerald-700 font-mono">₹{vendorStats.shippingRevenue?.toLocaleString('en-IN') || 0}</p>
+                                </div>
                               </div>
                             </div>
 

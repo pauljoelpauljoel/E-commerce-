@@ -73,13 +73,15 @@ export default function CartPage({ onNavigateTo }: CartPageProps) {
   const [loadingCoupons, setLoadingCoupons] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<any | null>(null);
 
+  const [totalShippingFee, setTotalShippingFee] = useState(0);
+  const [vendorShippingFees, setVendorShippingFees] = useState<any[]>([]);
+
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const shippingFee = 0;
   
   const hasMatchingCategory = appliedCoupon ? cart.some(item => item.category === appliedCoupon.categorySlug) : false;
   const finalDiscount = hasMatchingCategory ? (cartSubtotal * appliedCoupon.discountAmount / 100) : 0;
   
-  const grandTotal = Math.max(0, cartSubtotal - finalDiscount);
+  const grandTotal = Math.max(0, cartSubtotal - finalDiscount) + totalShippingFee;
 
   const fallbackAddress: Address = {
     label: 'Home',
@@ -142,6 +144,32 @@ export default function CartPage({ onNavigateTo }: CartPageProps) {
       loadCoupons();
     }
   }, [step]);
+
+  useEffect(() => {
+    if (step === 'invoice') {
+      const fetchShipping = async () => {
+        try {
+          const chosenAddress = addresses[selectedAddressIndex] || fallbackAddress;
+          const res = await fetch('/api/shipping/calculate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+            body: JSON.stringify({
+              items: cart.map(item => ({ productId: item.id, quantity: item.quantity })),
+              deliveryAddress: chosenAddress
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setTotalShippingFee(data.totalShippingFee || 0);
+            setVendorShippingFees(data.vendorFees || []);
+          }
+        } catch (e) {
+          console.error('Failed to calculate shipping', e);
+        }
+      };
+      fetchShipping();
+    }
+  }, [step, cart, selectedAddressIndex, addresses, token]);
 
   const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -749,6 +777,12 @@ export default function CartPage({ onNavigateTo }: CartPageProps) {
                       <span>-₹{finalDiscount.toLocaleString('en-IN')}</span>
                     </div>
                   )}
+                  {vendorShippingFees.map((vf: any) => (
+                    <div key={vf.vendorId} className="flex justify-between text-gray-500">
+                      <span>Shipping ({vf.storeName})</span>
+                      <span>+₹{vf.fee.toLocaleString('en-IN')}</span>
+                    </div>
+                  ))}
                   <div className="flex justify-between text-base font-black text-gray-900 border-t pt-2 mt-2">
                     <span>Grand Total</span>
                     <span className="text-violet-700">₹{grandTotal.toLocaleString('en-IN')}</span>

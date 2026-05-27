@@ -19,7 +19,7 @@ export default function ProductDetailPage({ productId, onNavigateTo }: ProductDe
 
   const [product, setProduct] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeImage, setActiveImage] = useState('');
+  const [currentSlide, setCurrentSlide] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState<'desc' | 'reviews'>('desc');
 
@@ -71,7 +71,7 @@ export default function ProductDetailPage({ productId, onNavigateTo }: ProductDe
         const found = (data.products || []).find((p: any) => p.id === productId);
         if (found) {
           setProduct(found);
-          setActiveImage(found.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80');
+          setCurrentSlide(0);
         }
       }
     } catch (e) {
@@ -167,13 +167,13 @@ export default function ProductDetailPage({ productId, onNavigateTo }: ProductDe
     return url && (url.startsWith('data:video/') || url.includes('.mp4') || url.includes('.webm') || url.includes('.ogg'));
   };
 
-  const extraThumbnails = [
+  const mediaItems = [
     ...(product.images || []),
     ...(product.video ? [product.video] : [])
   ].filter(Boolean);
   
-  if (extraThumbnails.length === 0) {
-    extraThumbnails.push('https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80');
+  if (mediaItems.length === 0) {
+    mediaItems.push('https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80');
   }
 
   return (
@@ -303,12 +303,47 @@ export default function ProductDetailPage({ productId, onNavigateTo }: ProductDe
         
         {/* Left: Image Gallery */}
         <div className="md:col-span-6 space-y-4">
-          <div className="aspect-square bg-gray-50 rounded-2xl overflow-hidden border border-gray-150 relative">
-            {isVideo(activeImage) ? (
-              <video src={activeImage} controls className="h-full w-full object-cover transition-all" autoPlay />
+          <div className="aspect-square bg-gray-50 rounded-2xl overflow-hidden border border-gray-150 relative group">
+            {isVideo(mediaItems[currentSlide]) ? (
+              <video src={mediaItems[currentSlide]} controls className="h-full w-full object-cover transition-all" autoPlay muted loop />
             ) : (
-              <img src={activeImage} alt={product.name} className="h-full w-full object-cover transition-all" />
+              <img src={mediaItems[currentSlide]} alt={product.name} className="h-full w-full object-cover transition-all" />
             )}
+            
+            {/* Arrows */}
+            {mediaItems.length > 1 && (
+              <>
+                <button 
+                  type="button"
+                  onClick={() => setCurrentSlide(prev => prev === 0 ? mediaItems.length - 1 : prev - 1)}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 h-10 w-10 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-800 shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white z-20 cursor-pointer"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setCurrentSlide(prev => prev === mediaItems.length - 1 ? 0 : prev + 1)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 h-10 w-10 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-800 shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white z-20 cursor-pointer"
+                >
+                  <ArrowRight className="h-5 w-5" />
+                </button>
+              </>
+            )}
+
+            {/* Dots */}
+            {mediaItems.length > 1 && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-20">
+                {mediaItems.map((_, idx) => (
+                  <button 
+                    key={idx}
+                    type="button"
+                    onClick={() => setCurrentSlide(idx)}
+                    className={`h-2 cursor-pointer rounded-full transition-all ${idx === currentSlide ? 'w-6 bg-violet-600' : 'w-2 bg-gray-300/80 hover:bg-violet-400'}`}
+                  />
+                ))}
+              </div>
+            )}
+
             {product.stock > 0 ? (
               <span className="absolute top-4 left-4 text-[10px] font-bold uppercase bg-emerald-500 text-white px-3 py-1 rounded-full shadow-sm z-10">
                 In Stock
@@ -324,30 +359,6 @@ export default function ProductDetailPage({ productId, onNavigateTo }: ProductDe
             >
               <Heart className={`h-5 w-5 ${isWishlisted() ? 'fill-red-500 text-red-500' : ''}`} />
             </button>
-          </div>
-
-          <div className="grid grid-cols-4 gap-3">
-            {extraThumbnails.map((mediaUrl, i) => {
-              const isVid = isVideo(mediaUrl);
-              return (
-                <button type="button"
-                  key={i}
-                  onClick={() => setActiveImage(mediaUrl)}
-                  className={`cursor-pointer rounded-xl overflow-hidden border-2 aspect-square bg-gray-50 transition-all relative ${activeImage === mediaUrl ? 'border-violet-600 scale-[1.02]' : 'border-gray-200 hover:border-violet-400'}`}
-                >
-                  {isVid ? (
-                    <div className="h-full w-full relative flex items-center justify-center bg-slate-900">
-                      <video src={mediaUrl} className="h-full w-full object-cover opacity-60" />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-white text-[9px] bg-black/60 px-1.5 py-0.5 rounded font-mono font-bold">▶ Video</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <img src={mediaUrl} alt="Detail" className="h-full w-full object-cover" />
-                  )}
-                </button>
-              );
-            })}
           </div>
         </div>
 

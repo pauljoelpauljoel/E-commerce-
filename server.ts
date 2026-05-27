@@ -10,8 +10,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
 import { Groq } from 'groq-sdk';
+import twilio from 'twilio';
 
-import * as admin from 'firebase-admin';
+import admin from 'firebase-admin';
 
 // Initialize Firebase Admin (requires GOOGLE_APPLICATION_CREDENTIALS or proper config)
 try {
@@ -21,7 +22,57 @@ try {
   console.warn('Firebase Admin SDK Initialization failed:', e);
 }
 
-// Helper to sync order to Firestore for WhatsApp Cloud Functions
+// Initialize Twilio
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886';
+
+let twilioClient: any = null;
+try {
+  if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) {
+    twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    console.log('Twilio Client Initialized');
+  }
+} catch (e) {
+  console.error('Twilio initialization failed:', e);
+}
+
+const messageTemplates = {
+  orderConfirmation: (name: string, orderId: string, amount: number) => 
+    `Hi ${name}, thank you for your order on Omni Bazaar! Your order ID is ${orderId}. Total amount: ₹${amount}. We'll notify you once it ships. Thank you for shopping with us!`,
+  paymentSuccess: (name: string, orderId: string) => 
+    `Hi ${name}, we have successfully received your payment for order ${orderId}. Thank you for shopping with Omni Bazaar!`,
+  orderShipped: (name: string, orderId: string, trackingLink: string) => 
+    `Hi ${name}, great news! Your order ${orderId} has been shipped. Track your delivery here: ${trackingLink}\nThank you for choosing Omni Bazaar!`,
+  deliveryUpdate: (name: string, orderId: string, status: string) => 
+    `Hi ${name}, here's an update on your order ${orderId}: Your package is currently marked as '${status}'.\nThank you for choosing Omni Bazaar!`,
+};
+
+async function sendWhatsAppNotification(toPhone: string, messageBody: string) {
+  if (!twilioClient) {
+    console.warn('Twilio is not configured. Message not sent.');
+    return;
+  }
+  let formattedPhone = toPhone;
+  if (!formattedPhone.startsWith('whatsapp:')) {
+    if (!formattedPhone.startsWith('+')) {
+      formattedPhone = `+91${formattedPhone}`;
+    }
+    formattedPhone = `whatsapp:${formattedPhone}`;
+  }
+  try {
+    await twilioClient.messages.create({
+      body: messageBody,
+      from: TWILIO_WHATSAPP_NUMBER,
+      to: formattedPhone
+    });
+    console.log(`WhatsApp message sent to ${formattedPhone}`);
+  } catch (error) {
+    console.error(`Error sending WhatsApp message to ${formattedPhone}:`, error);
+  }
+}
+
+// Helper to sync order to Firestore (Optional now that we send directly, but kept for DB sync)
 async function syncOrderToFirestore(order: any) {
   try {
     const db = admin.firestore();
@@ -1783,6 +1834,102 @@ async function ensureShipmentByOrder(order: any) {
   return shipment;
 }
 
+const SHIPPING_RATES: Record<string, number> = {
+  'coimbatore (local city)': 40,
+  'other tamil nadu areas': 70,
+  'tamil nadu': 70,
+  'karnataka': 90,
+  'kerala': 90,
+  'andhra pradesh': 90,
+  'telangana': 90,
+  'puducherry': 70,
+  'goa': 110,
+  'maharashtra': 120,
+  'gujarat': 130,
+  'madhya pradesh': 130,
+  'chhattisgarh': 130,
+  'odisha': 130,
+  'west bengal': 140,
+  'bihar': 140,
+  'jharkhand': 140,
+  'uttar pradesh': 150,
+  'delhi': 140,
+  'haryana': 140,
+  'punjab': 150,
+  'rajasthan': 150,
+  'uttarakhand': 160,
+  'himachal pradesh': 160,
+  'jammu & kashmir': 180,
+  'jammu and kashmir': 180,
+  'ladakh': 200,
+  'assam': 180,
+  'arunachal pradesh': 220,
+  'meghalaya': 200,
+  'manipur': 220,
+  'mizoram': 220,
+  'nagaland': 220,
+  'tripura': 200,
+  'sikkim': 200,
+  'chandigarh': 140,
+  'andaman & nicobar islands': 250,
+  'andaman and nicobar islands': 250,
+  'lakshadweep': 250,
+  'dadra & nagar haveli and daman & diu': 130
+};
+
+function calculateShippingCharge(vendorAddress: any, customerAddress: any): number {
+  if (!customerAddress || !customerAddress.state) return 100;
+
+  const cCity = (customerAddress.city || customerAddress.district || '').toLowerCase().trim();
+  const cState = (customerAddress.state || '').toLowerCase().trim();
+
+  let vCity = '';
+  let vState = '';
+  if (vendorAddress) {
+    vCity = (vendorAddress.city || vendorAddress.district || '').toLowerCase().trim();
+    vState = (vendorAddress.state || '').toLowerCase().trim();
+  }
+
+  // 1. Local City
+  if (cCity && vCity && cCity === vCity) return 40;
+
+  // 2. Same State
+  if (cState && vState && cState === vState) return 70;
+
+  // 3. Fallback to fixed table based on customer's state
+  const exactMatch = SHIPPING_RATES[cState];
+  if (exactMatch !== undefined) return exactMatch;
+
+  for (const [stateKey, fee] of Object.entries(SHIPPING_RATES)) {
+    if (cState.includes(stateKey) || stateKey.includes(cState)) return fee;
+  }
+
+  return 150;
+}
+
+app.post('/api/shipping/calculate', (req, res) => {
+  const { items, deliveryAddress } = req.body;
+  if (!items || !deliveryAddress) return res.status(400).json({ error: 'Missing items or address' });
+
+  let totalShippingFee = 0;
+  const vendorFees: any[] = [];
+
+  const vendorGroups = new Set<string>();
+  items.forEach((item: any) => {
+    const prod = db.products.find((p: any) => p.id === item.productId);
+    if (prod) vendorGroups.add(prod.vendorId);
+  });
+
+  vendorGroups.forEach((vId) => {
+    const vReq = db.vendor_requests.find((v: any) => v.vendorId === vId && (v.status === 'approved' || v.status === 'draft')) || {};
+    const fee = calculateShippingCharge(vReq, deliveryAddress);
+    vendorFees.push({ vendorId: vId, storeName: vReq.storeName || 'Unknown Vendor', fee });
+    totalShippingFee += fee;
+  });
+
+  res.json({ success: true, totalShippingFee, vendorFees });
+});
+
 // Order placement & cart validation Flow
 app.post('/api/orders', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -1804,14 +1951,15 @@ app.post('/api/orders', async (req, res) => {
 
   // Separate items by their vendor origin to instantiate sub-orders
   // As in true multi-vendor platform, orders are processed and shipped per vendor!
-  const vendorGroups: Record<string, { storeName: string; list: any[] }> = {};
+  const vendorGroups: Record<string, { storeName: string; list: any[], address: any }> = {};
   
   items.forEach((item: any) => {
     const prod = db.products.find((p: any) => p.id === item.productId);
     if (!prod) return;
     const vId = prod.vendorId;
     if (!vendorGroups[vId]) {
-      vendorGroups[vId] = { storeName: prod.vendorStoreName, list: [] };
+      const vReq = db.vendor_requests.find((v: any) => v.vendorId === vId && (v.status === 'approved' || v.status === 'draft')) || {};
+      vendorGroups[vId] = { storeName: prod.vendorStoreName, list: [], address: vReq };
     }
     // Decrement inventory stock securely
     prod.stock = Math.max(0, prod.stock - item.quantity);
@@ -1832,6 +1980,10 @@ app.post('/api/orders', async (req, res) => {
     if (discountPercentage > 0) {
       subTotal = Math.max(0, subTotal - (subTotal * discountPercentage / 100));
     }
+    
+    const shippingFee = calculateShippingCharge(group.address, deliveryAddress);
+    subTotal += shippingFee;
+
     const orderId = 'OB-' + Math.floor(Math.random() * 89999) + '-' + Math.floor(Math.random() * 899 + 100);
     
     // Create status tracing QR Code URL (or a simulated asset)
@@ -1851,6 +2003,7 @@ app.post('/api/orders', async (req, res) => {
       vendorId: vId,
       vendorStoreName: group.storeName,
       items: group.list,
+      shippingFee,
       totalAmount: subTotal,
       paymentMethod: paymentMethod || 'upi',
       paymentStatus: paymentMethod === 'cod' ? 'pending' : 'success', // UPI / Card is immediately completed in simulation
@@ -1875,8 +2028,14 @@ app.post('/api/orders', async (req, res) => {
     db.orders.push(freshOrder);
     createdOrders.push(freshOrder);
 
-    // Sync to Firestore for WhatsApp notifications
+    // Sync to Firestore
     await syncOrderToFirestore(freshOrder);
+
+    // DIRECT WHATSAPP CALL:
+    const phoneToSend = freshOrder.deliveryAddress?.phone || caller.phone || '9566980426';
+    const nameToSend = freshOrder.deliveryAddress?.fullName || caller.name;
+    const msg = messageTemplates.orderConfirmation(nameToSend, orderId, subTotal);
+    await sendWhatsAppNotification(phoneToSend, msg);
 
     // Dynamic QR and Shipment orchestration
     await ensureShipmentByOrder(freshOrder);
@@ -1971,8 +2130,20 @@ app.post('/api/orders/:id/status', async (req, res) => {
   // Sync to shipments DB
   await ensureShipmentByOrder(order);
 
-  // Sync to Firestore for WhatsApp notifications
+  // Sync to Firestore
   await syncOrderToFirestore(order);
+
+  // DIRECT WHATSAPP CALL:
+  const phoneToSend = order.deliveryAddress?.phone || order.customerPhone;
+  const nameToSend = order.deliveryAddress?.fullName || order.customerName;
+
+  if (status === 'shipped') {
+    const msg = messageTemplates.orderShipped(nameToSend, order.id, order.trackingLink || 'No link');
+    await sendWhatsAppNotification(phoneToSend, msg);
+  } else {
+    const msg = messageTemplates.deliveryUpdate(nameToSend, order.id, status);
+    await sendWhatsAppNotification(phoneToSend, msg);
+  }
 
   saveDB();
   res.json({ success: true, order });
@@ -2513,6 +2684,8 @@ app.get('/api/admin/vendors/:id', (req, res) => {
   const totalProducts = vendorProducts.length;
   const totalOrders = vendorOrders.length;
   const revenue = vendorOrders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+  const shippingRevenue = vendorOrders.reduce((sum: number, o: any) => sum + (o.shippingFee || 0), 0);
+  const productRevenue = revenue - shippingRevenue;
   const pendingOrders = vendorOrders.filter((o: any) => o.orderStatus === 'pending' || o.orderStatus === 'confirmed' || o.orderStatus === 'processing' || o.orderStatus === 'shipped' || o.orderStatus === 'out_for_delivery').length;
   const deliveredOrders = vendorOrders.filter((o: any) => o.orderStatus === 'delivered').length;
   const cancelledOrders = vendorOrders.filter((o: any) => o.orderStatus === 'cancelled').length;
@@ -2534,6 +2707,8 @@ app.get('/api/admin/vendors/:id', (req, res) => {
       totalProducts,
       totalOrders,
       revenue,
+      productRevenue,
+      shippingRevenue,
       pendingOrders,
       deliveredOrders,
       cancelledOrders,
@@ -2726,6 +2901,9 @@ app.get('/api/admin/analytics', (req, res) => {
   const products = db.products || [];
 
   const totalRevenue = orders.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+  const totalShippingRevenue = orders.reduce((sum: number, o: any) => sum + (o.shippingFee || 0), 0);
+  const totalProductRevenue = totalRevenue - totalShippingRevenue;
+  
   const totalOrders = orders.length;
   const completedOrders = orders.filter((o: any) => o.orderStatus === 'delivered').length;
   const pendingOrders = orders.filter((o: any) => o.orderStatus === 'pending').length;
@@ -2776,6 +2954,8 @@ app.get('/api/admin/analytics', (req, res) => {
   res.json({
     overview: {
       totalRevenue,
+      totalProductRevenue,
+      totalShippingRevenue,
       totalOrders,
       completedOrders,
       pendingOrders,
@@ -2792,6 +2972,8 @@ app.get('/api/admin/analytics', (req, res) => {
       customerName: o.customerName,
       vendorStoreName: o.vendorStoreName,
       totalAmount: o.totalAmount,
+      shippingFee: o.shippingFee || 0,
+      productAmount: (o.totalAmount || 0) - (o.shippingFee || 0),
       orderStatus: o.orderStatus,
       paymentMethod: o.paymentMethod,
       paymentStatus: o.paymentStatus,
@@ -2837,6 +3019,8 @@ Your goals:
 5. Keep answers concise, modern, and friendly.
 6. CRITICAL: ONLY suggest products that are explicitly provided in the live data context below. NEVER make up products. If a requested product or category (e.g., food) is not in the context, ALWAYS reply positively and encouragingly (e.g., "We don't have this right now, but we are looking forward to adding it in the future!"). Do not bluntly say no.
 7. CRITICAL: If the user asks a general question (like payment methods or shipping), answer directly using Store Info. Do NOT invent or suggest products unless explicitly requested.
+8. COMMUNICATION STYLE: Always reply with utmost humility. Frame your responses as polite requests rather than commands or orders. Never use demanding language.
+9. POSITIVITY: Always conclude your responses with a warm and positive closing statement, such as "Have a great day!" or "Thank you!".
 
 Here is the current live data context for the user. Use this to provide personalized answers:
 `;

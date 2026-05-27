@@ -730,6 +730,9 @@ export default function DashboardCustomer({ onNavigateTo }: DashboardCustomerPro
                           <div className="text-right">
                             <span className="text-[10px] text-gray-450 font-bold block">TOTAL CHARGED</span>
                             <span className="text-base font-black text-violet-650">₹{o.totalAmount.toLocaleString('en-IN')}</span>
+                            {(o.shippingFee || 0) > 0 && (
+                                <div className="text-[9px] text-gray-500 mt-0.5 font-sans mb-1">(incl. ₹{o.shippingFee} shipping)</div>
+                            )}
                             <span className={`capitalize text-[9px] font-bold py-0.5 px-2 rounded-full border ml-2 ${
                               o.orderStatus === 'delivered' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-violet-50 text-violet-750 border-violet-200'
                             }`}>
